@@ -32,8 +32,8 @@ let args = [...process.argv];
 
 let configCmd = args.indexOf("-c");
 if (configCmd != -1) {
-	configPath();
-	log("Config file is located at: " + process.env.NODE_CONFIG_DIR, "blue")
+	var configFile = configPath()
+	log("Config file is located at: " + configFile, "blue")
 	return;
 }
 
@@ -79,6 +79,7 @@ function configPath() {
 		fs.mkdirSync(configFolder, {recursive: true});
 		fs.writeFileSync(configFile, configFileData)
 	}
+	return configFile;
 }
 
 const config = require("config");
