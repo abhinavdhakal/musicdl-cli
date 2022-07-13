@@ -28,7 +28,7 @@ $ sudo npm link
 Configuration:
 
 To use this CLI tool, you will need Spotify client id and client secret.
-Click [here](#I-don't-have-spotify-client-and-secret
+Click [here](#i-dont-have-spotify-client-and-secret
 ) if you don't have one
 
 After getting Spotify client id and client secret,
