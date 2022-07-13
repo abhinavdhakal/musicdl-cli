@@ -30,9 +30,10 @@ let log = (msg, colour) => {
 
 let args = [...process.argv];
 
+let configFile = configPath();
+
 let configCmd = args.indexOf("-c");
 if (configCmd != -1) {
-	var configFile = configPath()
 	log("Config file is located at: " + configFile, "blue")
 	return;
 }
@@ -53,9 +54,11 @@ function configPath() {
 	let configFolder;
 	if (process.env.XDG_CONFIG_HOME) {
 		configFolder = path.join(process.env.XDG_CONFIG_HOME, appPrefix)
+		console.log(configFolder);
 	}
 	else if (fs.existsSync(`${os.homedir()}/.config`)) {
 		configFolder = path.join(`${os.homedir()}/.config/`, appPrefix);
+		console.log(configFolder)
 	}
 	else {
 		configFolder = path.join(os.homedir(), '.' + appPrefix);
@@ -81,6 +84,7 @@ function configPath() {
 	}
 	return configFile;
 }
+
 
 const config = require("config");
 
