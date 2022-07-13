@@ -28,29 +28,47 @@ let log = (msg, colour) => {
 }
 
 
+let args = [...process.argv];
+
+let configCmd = args.indexOf("-c");
+if (configCmd != -1) {
+	configPath();
+	log("Config file is located at: " + process.env.NODE_CONFIG_DIR, "blue")
+	return;
+}
+
+let lyricsCmd = args.indexOf("-l");
+if (lyricsCmd != -1) args.splice(lyricsCmd, 1)
+args.shift();
+args.shift();
+
+
+
+
+
 
 /////////////////////////FOR CONFIG////////////////////
-let configFolder
-if (process.env.XDG_CONFIG_HOME) {
-	configFolder = path.join(process.env.XDG_CONFIG_HOME, appPrefix)
-}
-else if (fs.existsSync(`${os.homedir()}/.config`)) {
-	configFolder = path.join(`${os.homedir()}/.config/`, appPrefix);
-}
-else {
-	configFolder = path.join(os.homedir(), '.' + appPrefix);
-}
+function configPath() {
 
-let configFile = path.join(configFolder, "default.json");
+	let configFolder;
+	if (process.env.XDG_CONFIG_HOME) {
+		configFolder = path.join(process.env.XDG_CONFIG_HOME, appPrefix)
+	}
+	else if (fs.existsSync(`${os.homedir()}/.config`)) {
+		configFolder = path.join(`${os.homedir()}/.config/`, appPrefix);
+	}
+	else {
+		configFolder = path.join(os.homedir(), '.' + appPrefix);
+	}
 
-process.env.NODE_CONFIG_DIR = configFolder;
+	let configFile = path.join(configFolder, "default.json");
+
+	process.env.NODE_CONFIG_DIR = configFolder;
 
 
+	if (!fs.existsSync(configFolder) || !fs.existsSync(configFile)) {
 
-
-if (!fs.existsSync(configFolder) || !fs.existsSync(configFile)) {
-
-	let configFileData = `{\n
+		let configFileData = `{\n
 	"Download_Directory": "${os.homedir()}/Downloads",\n
 	"spotify": {\n
 		\t"clientID": "Your Spotify Client ID",\n
@@ -58,12 +76,10 @@ if (!fs.existsSync(configFolder) || !fs.existsSync(configFile)) {
 	}\n
 }\n
 `
-
-
-	fs.mkdirSync(configFolder, {recursive: true});
-	fs.writeFileSync(configFile, configFileData)
+		fs.mkdirSync(configFolder, {recursive: true});
+		fs.writeFileSync(configFile, configFileData)
+	}
 }
-
 
 const config = require("config");
 
@@ -71,7 +87,6 @@ const config = require("config");
 
 
 const Spotify = require("./spotify.js");
-const {get} = require("node:http");
 let spotifyApi;
 
 async function checkSpotifyCredentials() {
@@ -113,22 +128,15 @@ if (config.has("Download_Directory")) {
 
 /////////////////////////////////////////////////////////////////////////
 
-let tmpDir;
+let imgDir;
 let bar1;
 try {
-	tmpDir = path.join(configFolder, "images");
-	if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir);
+	imgDir = path.join(process.env.NODE_CONFIG_DIR, "images");
+	if (!fs.existsSync(imgDir)) fs.mkdirSync(imgDir);
 } catch (err) {
 	log("while creating temporary directory: " + err);
 	return;
 }
-
-let args = [...process.argv];
-let lyricsCmd = args.indexOf("-l")
-if (lyricsCmd != -1) args.splice(lyricsCmd, 1)
-args.shift();
-args.shift();
-
 
 
 main();
@@ -224,8 +232,8 @@ async function downloadAndSave(spotifyObj, l, dir) {
 
 			const songBuffer = fs.readFileSync(filepath);
 
-			if (!fs.existsSync(path.join(tmpDir, `${song.album}.jpeg`))) {
-				await downloadImg(song.albumPic, path.join(tmpDir, `${song.album}.jpeg`));
+			if (!fs.existsSync(path.join(imgDir, `${song.album}.jpeg`))) {
+				await downloadImg(song.albumPic, path.join(imgDir, `${song.album}.jpeg`));
 				addCover(song, songBuffer, filepath);
 			}
 			else {
@@ -270,7 +278,7 @@ async function downloadPlaylistInfos(spotifyObj, dir) {
 
 
 function addCover(song, songBuffer, filepath) {
-	const coverBuffer = fs.readFileSync(path.join(tmpDir, `${song.album}.jpeg`));
+	const coverBuffer = fs.readFileSync(path.join(imgDir, `${song.album}.jpeg`));
 
 	const writer = new ID3Writer(songBuffer);
 
