@@ -4,22 +4,26 @@ const ID3Writer = require("browser-id3-writer");
 const cliProgress = require('cli-progress');
 const request = require("request-promise");
 const ffmpeg = require("fluent-ffmpeg");
-const appPrefix = "musicdl-cli";
 const fetch = require("node-fetch");
 const usetube = require("usetube");
 const ytdl = require("ytdl-core");
+const LastFM = require("last-fm");
+const appPrefix = "musicdl-cli";
 const chalk = require("chalk");
 const fs = require("node:fs");
 const path = require("path");
 const os = require("os");
 
-const LastFM = require("last-fm");
+
+
+
+
 const lastfm = new LastFM("43cc7377dd1e2dc13bf74948df183dd7", {
 	userAgent: "MyApp/1.0.0 (http://example.com)",
 });
 
 
-
+const args = [...process.argv];
 
 
 let log = (msg, colour) => {
@@ -28,7 +32,6 @@ let log = (msg, colour) => {
 }
 
 
-let args = [...process.argv];
 
 let configFile = configPath();
 
@@ -40,8 +43,7 @@ if (configCmd != -1) {
 
 let lyricsCmd = args.indexOf("-l");
 if (lyricsCmd != -1) args.splice(lyricsCmd, 1)
-args.shift();
-args.shift();
+
 
 
 
@@ -54,11 +56,9 @@ function configPath() {
 	let configFolder;
 	if (process.env.XDG_CONFIG_HOME) {
 		configFolder = path.join(process.env.XDG_CONFIG_HOME, appPrefix)
-		console.log(configFolder);
 	}
 	else if (fs.existsSync(`${os.homedir()}/.config`)) {
 		configFolder = path.join(`${os.homedir()}/.config/`, appPrefix);
-		console.log(configFolder)
 	}
 	else {
 		configFolder = path.join(os.homedir(), '.' + appPrefix);
@@ -150,6 +150,8 @@ async function main() {
 	let spot = await checkSpotifyCredentials();
 	if (spot == false) {return };
 
+	args.shift();
+	args.shift();
 	if (args[0] === undefined) {
 		log("Please provide a Song Name or Spotify Playlist/Album link", "red");
 		return;
@@ -258,14 +260,6 @@ async function downloadAndSave(spotifyObj, l, dir) {
 }
 
 
-
-
-
-
-
-
-
-
 async function downloadPlaylistInfos(spotifyObj, dir) {
 	downloadImg(spotifyObj.imgUrl, dir + "/cover.jpg", () => {
 	});
@@ -307,16 +301,6 @@ function addCover(song, songBuffer, filepath) {
 
 }
 
-
-
-
-
-
-
-
-/*************************************************************************************/
-
-// Custom-made function to fetch infos of a spotify playlist link
 async function spotifyToArray(link) {
 
 	let spotifyInfosByURL;
@@ -376,14 +360,13 @@ async function spotifyToArray(link) {
 
 	});
 
-
-	spotifyObj.songsArray = await ytLink(spotifyObj.songsArray)
+	spotifyObj.songsArray = await addYtLink(spotifyObj)
 
 	return spotifyObj;
 }
 
 
-async function ytLink(songsArray) {
+async function addYtLink({songsArray}) {
 	return Promise.all(songsArray.map(async (song) => {
 
 		let videos = await usetube.searchVideo(
@@ -433,7 +416,7 @@ async function getLyrics(song) {
 		if (res.macro_calls["track.subtitles.get"].message.header.status_code == "200") {
 			let lyricsJSON = JSON.parse(res.macro_calls["track.subtitles.get"].message.body.subtitle_list[0].subtitle.subtitle_body);
 			lyricsJSON.forEach((lyric) => {
-				let line = `[${lyric.time.minutes > 9 ? "" : "0"}${lyric.time.minutes}:${lyric.time.seconds > 9 ? "" : "0"}${lyric.time.seconds}.${lyric.time.hundredths > 9 ? "" : "0"}${lyric.time.hundredths}]${lyric.text}`
+				let line = `[${lyric.time.minutes > 9 ? "" : "0"}${lyric.time.minutes}:${lyric.time.seconds > 9 ? "" : "0"}${lyric.time.seconds}.${lyric.time.hundredths > 9 ? "" : "0"}${lyric.time.hundredths}]${lyric.text || '♬♬'}`
 				lyrics = lyrics + line + "\n"
 			})
 		} else {
