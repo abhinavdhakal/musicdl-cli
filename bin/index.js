@@ -3,7 +3,9 @@
 const ID3Writer = require("browser-id3-writer");
 const cliProgress = require('cli-progress');
 const request = require("request-promise");
-const ffmpeg = require("fluent-ffmpeg");
+const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
+const ffmpeg = require('fluent-ffmpeg');
+ffmpeg.setFfmpegPath(ffmpegPath)
 const fetch = require("node-fetch");
 const usetube = require("usetube");
 const ytdl = require("ytdl-core");
@@ -18,8 +20,9 @@ const os = require("os");
 
 
 
-const lastfm = new LastFM("43cc7377dd1e2dc13bf74948df183dd7", {
-	userAgent: "MyApp/1.0.0 (http://example.com)",
+const lastfm = new LastFM(
+	"43cc7377dd1e2dc13bf74948df183dd7", {
+	userAgent: "MyApp/1.0.0 (http://example.com)"
 });
 
 
@@ -70,9 +73,10 @@ function configPath() {
 
 
 	if (!fs.existsSync(configFolder) || !fs.existsSync(configFile)) {
-
+		let downloadDir = path.join(os.homedir(),"Downloads").replaceAll("\\","/");
 		let configFileData = `{\n
-	"Download_Directory": "${os.homedir()}/Downloads",\n
+		"Warning":"Please use '/' while changing Download_Directory",\n
+	"Download_Directory": "${downloadDir}",\n
 	"spotify": {\n
 		\t"clientID": "Your Spotify Client ID",\n
 		\t"clientSecret": "Your Spotify Client Secret"\n
@@ -198,7 +202,6 @@ function startDownload(link) {
 
 async function downloadAndSave(spotifyObj, l, dir) {
 	for (let i = 1; i <= l; i++) {
-
 		if (spotifyObj.songsArray.length === 0) return;
 
 		let song = spotifyObj.songsArray.shift();
@@ -227,7 +230,10 @@ async function downloadAndSave(spotifyObj, l, dir) {
 			.toFormat("mp3")
 			.outputOptions(...outputOptions)
 			.on("error", function (err) {
+				bar1.increment(1)
+if (!bar1.isActive) log("Error downloading: " + song.artist[0] + " - "+song.title, "red")
 				log(err);
+			downloadAndSave(spotifyObj, 1, dir);
 			})
 			.saveToFile(filepath);
 
@@ -353,15 +359,25 @@ async function spotifyToArray(link) {
 			duration: (item.track || item)?.duration_ms
 		};
 
-
-		lastfm.trackTopTags({name: songInfos.title, artistName: songInfos.artist[0], autocorrect: 1, }, (err, data) => {if (err) {console.error(err);} else {if (data.tag.length === 0) songInfos.genre.push("music"); data.tag.forEach((tag, index) => {if (index < 5) songInfos.genre.push(tag.name);});} });
-
+		lastfm.trackTopTags({name: songInfos.title, artistName: songInfos.artist[0], autocorrect: 1, },
+		(err, data) => {
+			if (err) {console.error(err);}
+			else {
+				if (data.tag.length === 0) songInfos.genre.push("music"); 
+				data.tag.forEach((tag, index) => {
+					if (index < 5) songInfos.genre.push(tag.name);
+					});
+					}					
+					});
+					
+					
+		
 		spotifyObj.songsArray.push(songInfos);
 
 	});
 
 	spotifyObj.songsArray = await addYtLink(spotifyObj)
-
+	
 	return spotifyObj;
 }
 

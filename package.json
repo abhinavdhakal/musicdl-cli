@@ -4,7 +4,8 @@
 	"description": "A simple cli tool to download your favourite music/album/playlist from Spotify.",
 	"main": "index.js",
 	"scripts": {
-		"test": "echo \"Error: no test specified\" && exit 1"
+		"test": "echo \"Error: no test specified\" && exit 1",
+		"start": "node bin/index.js"
 	},
 	"publishConfig": {
 		"access": "public"
@@ -12,6 +13,7 @@
 	"author": "Abhinav Dhakal (https://abhinavdhakal.com.np)",
 	"license": "ISC",
 	"dependencies": {
+		"@ffmpeg-installer/ffmpeg": "^1.1.0",
 		"axios": "^0.27.2",
 		"browser-id3-writer": "^4.4.0",
 		"chalk": "^4.1.2",
@@ -21,6 +23,7 @@
 		"fs": "^0.0.1-security",
 		"http": "^0.0.1-security",
 		"last-fm": "^5.3.0",
+		"lastfm": "^0.9.3",
 		"node-fetch": "^2.6.7",
 		"os": "^0.1.2",
 		"path": "^0.12.7",
@@ -41,6 +44,5 @@
 	"bugs": {
 		"url": "https://github.com/AbhinavDhakal/musicdl-cli/issues"
 	},
-	"homepage": "https://github.com/AbhinavDhakal/musicdl-cli#readme",
-	"devDependencies": {}
+	"homepage": "https://github.com/AbhinavDhakal/musicdl-cli#readme"
 }
