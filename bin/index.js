@@ -73,7 +73,7 @@ function configPath() {
 
 
 	if (!fs.existsSync(configFolder) || !fs.existsSync(configFile)) {
-		let downloadDir = path.join(os.homedir(),"Downloads").replaceAll("\\","/");
+		let downloadDir = path.join(os.homedir(), "Downloads").replaceAll("\\", "/");
 		let configFileData = `{\n
 		"Warning":"Please use '/' while changing Download_Directory",\n
 	"Download_Directory": "${downloadDir}",\n
@@ -180,6 +180,9 @@ function startDownload(link) {
 		if (!spotifyObj?.songsArray) return;
 
 		let playlistName = (spotifyObj.type === "track") ? "tracks" : spotifyObj.name;
+		///fix///
+		playlistName = playlistName.replaceAll("/", "_").replaceAll("\\", "_");
+		/////////
 		let dir = path.join(downloadDir, playlistName);
 		if (!fs.existsSync(dir)) {
 			fs.mkdirSync(dir, {recursive: true});
@@ -215,9 +218,9 @@ async function downloadAndSave(spotifyObj, l, dir) {
 		let audioReadableStream = ytdl(song.link, {format: highestFormat});
 		let filepath;
 		if (spotifyObj.type == "track")
-			filepath = path.join(dir, `${song.artist[0]} - ${song.title}.mp3`);
+			filepath = path.join(dir, `${song.fullTitle}.mp3`);
 		else
-			filepath = path.join(dir, `${song.id}. ${song.artist[0]} - ${song.title}.mp3`);
+			filepath = path.join(dir, `${song.id}. ${song.fullTitle}.mp3`);
 
 		let outputOptions = ["-id3v2_version", "4"];
 
@@ -231,9 +234,9 @@ async function downloadAndSave(spotifyObj, l, dir) {
 			.outputOptions(...outputOptions)
 			.on("error", function (err) {
 				bar1.increment(1)
-if (!bar1.isActive) log("Error downloading: " + song.artist[0] + " - "+song.title, "red")
+				if (!bar1.isActive) log("Error downloading: " + song.artist[0] + " - " + song.title, "red")
 				log(err);
-			downloadAndSave(spotifyObj, 1, dir);
+				downloadAndSave(spotifyObj, 1, dir);
 			})
 			.saveToFile(filepath);
 
@@ -273,7 +276,7 @@ async function downloadPlaylistInfos(spotifyObj, dir) {
 	let playlistString = "";
 	spotifyObj.songsArray.forEach((song) => {
 		playlistString =
-			playlistString + `${song.id}. ${song.artist[0]} - ${song.title}.mp3\n`;
+			playlistString + `${song.id}. ${song.fullTitle}.mp3\n`;
 	});
 
 	playlistFile.write(playlistString, (err) => {
@@ -356,28 +359,34 @@ async function spotifyToArray(link) {
 			albumPic: (item.track?.album || spotifyInfosByURL).images[0].url,
 			date: (item.track?.album || spotifyInfosByURL)?.release_date.slice(0, 4),
 			spotifyId: (item.track || item)?.id,
-			duration: (item.track || item)?.duration_ms
+			duration: (item.track || item)?.duration_ms,
+			fullTitle: ''
 		};
 
+		///FIX///
+		songInfos.fullTitle = `${songInfos.artist[0]} - ${songInfos.title}`
+		songInfos.fullTitle = songInfos.fullTitle.replaceAll("/", "_").replaceAll("\\", "_");
+		////////
+
 		lastfm.trackTopTags({name: songInfos.title, artistName: songInfos.artist[0], autocorrect: 1, },
-		(err, data) => {
-			if (err) {console.error(err);}
-			else {
-				if (data.tag.length === 0) songInfos.genre.push("music"); 
-				data.tag.forEach((tag, index) => {
-					if (index < 5) songInfos.genre.push(tag.name);
+			(err, data) => {
+				if (err) {console.error(err);}
+				else {
+					if (data.tag.length === 0) songInfos.genre.push("music");
+					data.tag.forEach((tag, index) => {
+						if (index < 5) songInfos.genre.push(tag.name);
 					});
-					}					
-					});
-					
-					
-		
+				}
+			});
+
+
+
 		spotifyObj.songsArray.push(songInfos);
 
 	});
 
 	spotifyObj.songsArray = await addYtLink(spotifyObj)
-	
+
 	return spotifyObj;
 }
 
