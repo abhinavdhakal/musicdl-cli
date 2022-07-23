@@ -210,6 +210,7 @@ async function downloadAndSave(spotifyObj, l, dir) {
 		let song = spotifyObj.songsArray.shift();
 
 
+		song.link = await addYtLink(song);
 		let info = await ytdl.getInfo(song.link);
 		let highestFormat = ytdl.chooseFormat(info.formats, {
 			quality: "highestaudio",
@@ -248,8 +249,8 @@ async function downloadAndSave(spotifyObj, l, dir) {
 
 			const songBuffer = fs.readFileSync(filepath);
 
-			if (!fs.existsSync(path.join(imgDir, `${song.album}.jpeg`))) {
-				await downloadImg(song.albumPic, path.join(imgDir, `${song.album}.jpeg`));
+			if (!fs.existsSync(path.join(imgDir, `${song.albumFile}`))) {
+				await downloadImg(song.albumPic, path.join(imgDir, `${song.albumFile}`));
 				addCover(song, songBuffer, filepath);
 			}
 			else {
@@ -276,7 +277,7 @@ async function downloadPlaylistInfos(spotifyObj, dir) {
 	let playlistString = "";
 	spotifyObj.songsArray.forEach((song) => {
 		playlistString =
-			playlistString + `${song.id}. ${song.fullTitle}.mp3\n`;
+			playlistString + `${song.id}.${song.fullTitle}.mp3\n`;
 	});
 
 	playlistFile.write(playlistString, (err) => {
@@ -286,7 +287,8 @@ async function downloadPlaylistInfos(spotifyObj, dir) {
 
 
 function addCover(song, songBuffer, filepath) {
-	const coverBuffer = fs.readFileSync(path.join(imgDir, `${song.album}.jpeg`));
+
+	const coverBuffer = fs.readFileSync(path.join(imgDir, `${song.albumFile}`));
 
 	const writer = new ID3Writer(songBuffer);
 
@@ -353,7 +355,6 @@ async function spotifyToArray(link) {
 			title: (item.track || item)?.name,
 			artist: artists,
 			trackNo: (item.track || item)?.track_number,
-			link: '',
 			genre: [],
 			album: (item.track?.album || spotifyInfosByURL).name,
 			albumPic: (item.track?.album || spotifyInfosByURL).images[0].url,
@@ -366,6 +367,7 @@ async function spotifyToArray(link) {
 		///FIX///
 		songInfos.fullTitle = `${songInfos.artist[0]} - ${songInfos.title}`
 		songInfos.fullTitle = songInfos.fullTitle.replaceAll("/", "_").replaceAll("\\", "_");
+		songInfos.albumFile = songInfos.album.replaceAll("/", "_").replaceAll("\\", "_");
 		////////
 
 		lastfm.trackTopTags({name: songInfos.title, artistName: songInfos.artist[0], autocorrect: 1, },
@@ -385,26 +387,19 @@ async function spotifyToArray(link) {
 
 	});
 
-	spotifyObj.songsArray = await addYtLink(spotifyObj)
 
 	return spotifyObj;
 }
 
 
-async function addYtLink({songsArray}) {
-	return Promise.all(songsArray.map(async (song) => {
+async function addYtLink(song) {
 
-		let videos = await usetube.searchVideo(
-			song.artist[0] + " - " + song.title + " official audio"
-		);
-		song.link = ("https://www.youtube.com/watch?v=" + videos.videos[0].id);
+	let videos = await usetube.searchVideo(
+		song.artist[0] + " - " + song.title + " official audio"
+	);
+	let link = ("https://www.youtube.com/watch?v=" + videos?.videos[0]?.id);
 
-		//await musicInfo.searchSong({title: song.title, artist: song.artist[0], album: song.album}, 1000).then((data) => {
-		//	song.genre.push(data.genre);
-		//}).catch(err => {});
-
-		return song;
-	}));
+	return link;
 }
 
 async function downloadImg(uri, file) {
@@ -441,7 +436,7 @@ async function getLyrics(song) {
 		if (res.macro_calls["track.subtitles.get"].message.header.status_code == "200") {
 			let lyricsJSON = JSON.parse(res.macro_calls["track.subtitles.get"].message.body.subtitle_list[0].subtitle.subtitle_body);
 			lyricsJSON.forEach((lyric) => {
-				let line = `[${lyric.time.minutes > 9 ? "" : "0"}${lyric.time.minutes}:${lyric.time.seconds > 9 ? "" : "0"}${lyric.time.seconds}.${lyric.time.hundredths > 9 ? "" : "0"}${lyric.time.hundredths}]${lyric.text || '♬♬'}`
+				let line = `[${lyric.time.minutes > 9 ? "" : "0"}${lyric.time.minutes}: ${lyric.time.seconds > 9 ? "" : "0"}${lyric.time.seconds}.${lyric.time.hundredths > 9 ? "" : "0"}${lyric.time.hundredths}]${lyric.text || '♬♬'}`
 				lyrics = lyrics + line + "\n"
 			})
 		} else {

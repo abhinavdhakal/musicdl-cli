@@ -114,10 +114,27 @@ module.exports = class Spotify {
 		let result
 		try {
 			result = await request.get(APIOptions);
+
+
+
+
+
+
+
 			if (result.statusCode == 400) {
 				console.error("Invalid arguments!");
 				return false;
 			}
+
+			///////
+
+			console.log("total : " + result.tracks.total)
+			if (result?.tracks?.next) {
+				result.tracks.items = result.tracks.items.concat((await this.getPlaylistNextTracks(result.tracks.next))?.items);
+			}
+
+			///////
+
 		} catch (err) {
 			if (err.statusCode == 400) {
 				console.error("Invalid Link!");
@@ -125,6 +142,8 @@ module.exports = class Spotify {
 			}
 			result = false
 		}
+
+		console.log(result.tracks.items.length);
 		return result;
 	}
 
@@ -154,6 +173,7 @@ module.exports = class Spotify {
 			}
 			result = false
 		}
+
 		return result;
 
 	}
@@ -175,6 +195,42 @@ module.exports = class Spotify {
 		let regex = /(?<=https:\/\/open\.spotify\.com\/playlist\/)([a-zA-Z0-9]{15,})/g;
 		let playListID = playlistURL.match(regex)[0];
 		return await this.getPlaylist(playListID);
+	}
+
+	async getPlaylistNextTracks(nextUrl) {
+		let APIOptions;
+		let token = await this.getToken();
+
+		if (token === false) return {token: false};
+		APIOptions = {
+			url: nextUrl,
+			headers: {
+				Authorization: "Bearer " + token,
+			},
+			json: true,
+		};
+
+		let result
+		try {
+			result = await request.get(APIOptions);
+
+			if (result.statusCode == 400) {
+				return false;
+			}
+
+			///////
+
+			if (result?.next) {
+				result.items = result.items.concat((await this.getPlaylistNextTracks(result.next))?.items);
+			}
+
+			///////
+
+		} catch (err) {
+			return false
+		}
+		return result;
+
 	}
 
 };
