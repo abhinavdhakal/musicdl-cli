@@ -128,7 +128,6 @@ module.exports = class Spotify {
 
 			///////
 
-			console.log("total : " + result.tracks.total)
 			if (result?.tracks?.next) {
 				result.tracks.items = result.tracks.items.concat((await this.getPlaylistNextTracks(result.tracks.next))?.items);
 			}
@@ -143,7 +142,6 @@ module.exports = class Spotify {
 			result = false
 		}
 
-		console.log(result.tracks.items.length);
 		return result;
 	}
 
