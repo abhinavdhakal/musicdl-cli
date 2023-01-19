@@ -54,25 +54,39 @@ Search and download **song**: *(one at a time)*
 ```bash
 $ musicdl-cli "lost frank ocean"
 ```
+
+Download spotify **album**:
+```bash
+$ musicdl-cli "https://open.spotify.com/album/34GQP3dILpyCN018y2k61L"
+```
+
+Download spotify **playlist**:
+```bash
+$ musicdl-cli "https://open.spotify.com/playlist/any-playlist"
+```
+Download spotify **track**:
+```bash
+$ musicdl-cli  "https://open.spotify.com/track/any-track"
+```
+
+## Options
+
+Lyrics 
+
 You can also include **synced lyrics** by using `-l` flag:
 ```bash
 $ musicdl-cli -l "joji i'll see you in 40"
 ```
 
-Download spotify **album**:
+No. of parallel downloads. Defaul is `2`.
 ```bash
-$ musicdl-cli -l "https://open.spotify.com/album/34GQP3dILpyCN018y2k61L"
+-d <no of parallel downloads you want>
 ```
-
-Download spotify **playlist**:
+For eg.
 ```bash
-$ musicdl-cli -l "https://open.spotify.com/playlist/any-playlist"
+musicdl-cli -l "https://open.spotify.com/album/34GQP3dILpyCN018y2k61L" -d 3
 ```
-Download spotify **track**:
-```bash
-$ musicdl-cli -l https://open.spotify.com/track/any-track
-```
-
+The above command will download 3 tracks at a time.
 
 ## I don't have spotify client and secret
 
