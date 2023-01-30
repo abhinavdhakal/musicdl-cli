@@ -15,6 +15,7 @@ const chalk = require("chalk");
 const fs = require("node:fs");
 const path = require("path");
 const os = require("os");
+const inquirer = require("inquirer");
 
 const lastfm = new LastFM("43cc7377dd1e2dc13bf74948df183dd7", {
   userAgent: "MyApp/1.0.0 (http://example.com)",
@@ -170,7 +171,7 @@ async function main() {
 }
 
 function startDownload(link) {
-  spotifyToArray(link).then((spotifyObj) => {
+  spotifyToArray(link).then(async (spotifyObj) => {
     if (!spotifyObj?.songsArray) return;
 
     let playlistName = spotifyObj.type === "track" ? "tracks" : spotifyObj.name;
@@ -182,8 +183,6 @@ function startDownload(link) {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-
-    if (spotifyObj.type != "track") downloadPlaylistInfos(spotifyObj, dir);
 
     multibar = new cliProgress.MultiBar(
       {
@@ -204,21 +203,48 @@ function startDownload(link) {
       );
       log("Successfull: " + spotifyObj.completed, "green");
       log("Failed: " + spotifyObj.failed.length, "red");
-      //fs.rmdirSync(path.join(dir, ".temp"))
     });
 
-    for (let i = 0; i < spotifyObj.total; i++) {
-      if (i < (parNum || 2)) {
-        bars[i] = multibar.create(
-          100,
-          0,
-          {},
+    // For resuming a download
+    if (fs.existsSync(path.join(dir, "process.json"))) {
+      try {
+        const questions = [
           {
-            stopOnComplete: false,
-          }
-        );
-        downloadAndSave(spotifyObj, dir, i);
+            type: "input",
+            name: "resume",
+            message: "Do you want to resume your previous download? (Y/n)",
+          },
+        ];
+
+        let ans = await inquirer.prompt(questions);
+        if (ans.resume.trim().toLowerCase() != "n") {
+          let oldSpotifyObj = fs.readFileSync(path.join(dir, "process.json"));
+          spotifyObj = JSON.parse(oldSpotifyObj);
+          console.log("Resuming previous downloads!");
+          resume(spotifyObj, dir);
+          return;
+        } else {
+          console.log("Previous downloads will be overrided!");
+        }
+      } catch (err) {
+        console.log(err);
       }
+    }
+
+    ///////
+
+    if (spotifyObj.type != "track") downloadPlaylistInfos(spotifyObj, dir);
+
+    for (let i = 0; i < spotifyObj.parNum; i++) {
+      bars[i] = multibar.create(
+        100,
+        0,
+        {},
+        {
+          stopOnComplete: false,
+        }
+      );
+      downloadAndSave(spotifyObj, dir, i);
     }
   });
 }
@@ -240,56 +266,37 @@ async function downloadAndSave(spotifyObj, dir, currID) {
 
   fs.writeFileSync(path.join(dir, "process.json"), JSON.stringify(spotifyObj));
 
-  let info = await ytdl.getInfo(song.link);
-  let highestFormat = ytdl.chooseFormat(info.formats, {
-    quality: "highestaudio",
-  });
+  try {
+    let info = await ytdl.getInfo(song.link);
+    let highestFormat = ytdl.chooseFormat(info.formats, {
+      quality: "highestaudio",
+    });
 
-  let audioReadableStream = ytdl(song.link, { format: highestFormat });
+    let audioReadableStream = ytdl(song.link, { format: highestFormat });
 
-  let filepath;
-  if (spotifyObj.type == "track") {
-    filepath = path.join(dir, `${song.fullTitle}.mp3`);
-  } else {
-    filepath = path.join(dir, `${song.id}. ${song.fullTitle}.mp3`);
+    let filepath;
+    if (spotifyObj.type == "track") {
+      filepath = path.join(dir, `${song.fullTitle}.mp3`);
+    } else {
+      filepath = path.join(dir, `${song.id}. ${song.fullTitle}.mp3`);
+    }
+
+    const audioBitrate = highestFormat.audioBitrate;
+
+    DownloadAndEncode(
+      audioReadableStream,
+      spotifyObj,
+      song,
+      filepath,
+      audioBitrate,
+      dir,
+      currID
+    );
+  } catch (err) {
+    bars[currID].update(100);
+    spotifyObj.failed.push(song.fullTitle);
+    downloadAndSave(spotifyObj, dir, currID);
   }
-
-  //if (!fs.existsSync(path.join(dir, ".temp"))) fs.mkdirSync(path.join(dir, ".temp"));
-
-  const audioBitrate = highestFormat.audioBitrate;
-
-  ////////////////////////exp///////////////
-  /*
-	
-		audioReadableStream.pipe(fs.createWriteStream(filepath));
-	
-		audioReadableStream.on('response', function (res) {
-			var totalSize = res.headers['content-length'];
-			var dataRead = 0;
-			res.on('data', function (data) {
-				dataRead += data.length;
-				let percent = Math.floor(dataRead / totalSize * 100)
-				bars[currID].update(percent)
-			});
-	
-			res.on('end', async function () {
-	
-				postDownload(spotifyObj, song, filepath, audioBitrate, dir, currID);
-			});
-		});
-	
-	
-	*/
-
-  DownloadAndEncode(
-    audioReadableStream,
-    spotifyObj,
-    song,
-    filepath,
-    audioBitrate,
-    dir,
-    currID
-  );
   /////////////////////////////////////////
 }
 
@@ -302,9 +309,6 @@ function DownloadAndEncode(
   dir,
   currID
 ) {
-  //bars[currID].options.format = `{bar} | Encoding {value}% : ${song.id}. ${song.fullTitle}`
-  //bars[currID].update(0)
-
   let outputOptions = ["-id3v2_version", "4"];
 
   //Start encoding
@@ -330,14 +334,9 @@ function DownloadAndEncode(
     bars[currID].update(perc);
   });
 
-  //enc.saveToFile(path.join(dir, ".temp", `${song.id}.${song.spotifyId}`));
-
   enc.saveToFile(filepath);
 
   enc.on("end", async function () {
-    //fs.rmSync(filepath)
-    //fs.renameSync(path.join(dir, ".temp", `${song.id}.${song.spotifyId}`), filepath)
-
     await addCoverAndMetadata(spotifyObj, song, filepath);
     if (lyricsCmd >= 0) {
       getLyrics(song).then((data) => {
@@ -345,6 +344,10 @@ function DownloadAndEncode(
       });
     }
     spotifyObj.completed += 1;
+    bars[
+      currID
+    ].options.format = `{bar} | Completed {value}%: ${song.id}. ${song.fullTitle}`;
+
     bars[currID].update(100);
     downloadAndSave(spotifyObj, dir, currID);
   });
@@ -437,6 +440,7 @@ async function spotifyToArray(link) {
     completed: 0,
     total: spotifyInfosByURL.tracks.items.length,
     type: spotifyInfosByURL.type,
+    parNum: parNum || 2,
   };
 
   spotifyInfosByURL.tracks.items.forEach((item, index) => {
@@ -462,7 +466,6 @@ async function spotifyToArray(link) {
       spotifyId: (item.track || item)?.id,
       duration: (item.track || item)?.duration_ms,
       fullTitle: "",
-      is_local: item.is_local,
     };
 
     ///FIX///
@@ -548,4 +551,23 @@ async function getLyrics(song) {
     lyrics = "Error!";
   }
   return lyrics;
+}
+
+function resume(oldSpotifyObj, dir) {
+  oldSpotifyObj.songsArray = [
+    ...oldSpotifyObj.current.reverse(),
+    ...oldSpotifyObj.songsArray,
+  ];
+  oldSpotifyObj.current = [];
+  for (let i = 0; i < oldSpotifyObj.parNum; i++) {
+    bars[i] = multibar.create(
+      100,
+      0,
+      {},
+      {
+        stopOnComplete: false,
+      }
+    );
+    downloadAndSave(oldSpotifyObj, dir, i);
+  }
 }
