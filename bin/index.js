@@ -432,7 +432,7 @@ async function spotifyToArray(link) {
     imgUrl: (spotifyInfosByURL?.images || spotifyInfosByURL?.album?.images)[0]
       .url,
     songsArray: [],
-    current: [], //currently downloading song, maximum 3 songs.
+    current: [],
     failed: [],
     completed: 0,
     total: spotifyInfosByURL.tracks.items.length,
@@ -444,6 +444,12 @@ async function spotifyToArray(link) {
     (item.track?.artists || item.artists).forEach((art) => {
       artists.push(art.name);
     });
+
+    if (item.is_local)
+      return spotifyObj.failed.push(
+        artists[0] + " - " + (item.track || item)?.name
+      );
+
     let songInfos = {
       id: index + 1,
       title: (item.track || item)?.name,
@@ -456,6 +462,7 @@ async function spotifyToArray(link) {
       spotifyId: (item.track || item)?.id,
       duration: (item.track || item)?.duration_ms,
       fullTitle: "",
+      is_local: item.is_local,
     };
 
     ///FIX///
@@ -476,7 +483,8 @@ async function spotifyToArray(link) {
       },
       (err, data) => {
         if (err) {
-          console.error(err);
+          log(err, "red");
+          console.error(songInfos);
         } else {
           if (data.tag.length === 0) songInfos.genre.push("music");
           data.tag.forEach((tag, index) => {
