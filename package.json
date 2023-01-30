@@ -1,6 +1,6 @@
 {
 	"name": "musicdl-cli",
-	"version": "2.0.0",
+	"version": "2.0.1",
 	"description": "A simple cli tool to download your favourite music/album/playlist from Spotify.",
 	"main": "index.js",
 	"scripts": {
