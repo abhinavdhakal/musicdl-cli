@@ -532,7 +532,7 @@ async function downloadImg(uri, file) {
 
 async function getLyrics(song) {
   let lyrics = "";
-  let reqLink = `https://spotify-lyric-api.herokuapp.com/?trackid=${song.spotifyId}&format=lrc`;
+  let reqLink = `https://spotify-lyric-api-984e7b4face0.herokuapp.com/?trackid=${song.spotifyId}&format=lrc`;
 
   try {
     let res = await request(reqLink);
