@@ -17,6 +17,10 @@ const path = require("path");
 const os = require("os");
 const inquirer = require("inquirer");
 
+const filenameConverter = require('filename-converter');
+
+
+
 const lastfm = new LastFM("43cc7377dd1e2dc13bf74948df183dd7", {
   userAgent: "MyApp/1.0.0 (http://example.com)",
 });
@@ -175,9 +179,11 @@ function startDownload(link) {
     if (!spotifyObj?.songsArray) return;
 
     let playlistName = spotifyObj.type === "track" ? "tracks" : spotifyObj.name;
+
     ///fix///
     playlistName = playlistName.replaceAll("/", "_").replaceAll("\\", "_");
     /////////
+	  //
     let dir = path.join(downloadDir, playlistName);
 
     if (!fs.existsSync(dir)) {
@@ -364,7 +370,7 @@ async function downloadPlaylistInfos(spotifyObj, dir) {
   let playlistFile = fs.createWriteStream(dir + "/playlist.m3u8");
   let playlistString = "";
   spotifyObj.songsArray.forEach((song) => {
-    playlistString = playlistString + `${song.id}.${song.fullTitle}.mp3\n`;
+    playlistString = playlistString + `${song.id}. ${song.fullTitle}.mp3\n`;
   });
 
   playlistFile.write(playlistString, (err) => {
@@ -470,12 +476,10 @@ async function spotifyToArray(link) {
 
     ///FIX///
     songInfos.fullTitle = `${songInfos.artist[0]} - ${songInfos.title}`;
-    songInfos.fullTitle = songInfos.fullTitle
-      .replaceAll("/", "_")
-      .replaceAll("\\", "_");
-    songInfos.albumFile = songInfos.album
-      .replaceAll("/", "_")
-      .replaceAll("\\", "_");
+
+    songInfos.fullTitle = filenameConverter.serialize(songInfos.fullTitle)
+
+    songInfos.albumFile = filenameConverter.serialize(songInfos.album)
     ////////
 
     lastfm.trackTopTags(
