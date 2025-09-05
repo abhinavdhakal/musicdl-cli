@@ -3,7 +3,7 @@
 
 A simple cli spotify music downloader.
 
-It uses Youtube as the audio source and Spotify API for playlist/album/track details.
+It uses freely available music videos as the audio source and Spotify API for playlist/album/track details.
 
 *As there are plenty of reverbs and remix and lofi edits in youtube, the tool may not get the correct audio sometimes*
 
