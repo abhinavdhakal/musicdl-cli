@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 "use strict";
+
+
 const Scraper = require("@yimura/scraper").default;
 const ID3Writer = require("browser-id3-writer");
 const cliProgress = require("cli-progress");
-const request = require("request-promise");
 const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
 const ffmpeg = require("fluent-ffmpeg");
 ffmpeg.setFfmpegPath(ffmpegPath);
-const fetch = require("node-fetch");
-const ytdl = require("ytdl-core");
+const ytdl = require("@distube/ytdl-core");
 const LastFM = require("last-fm");
 const appPrefix = "musicdl-cli";
 const chalk = require("chalk");
@@ -16,10 +16,9 @@ const fs = require("node:fs");
 const path = require("path");
 const os = require("os");
 const inquirer = require("inquirer");
+const axios = require("axios");
 
-const filenameConverter = require('filename-converter');
-
-
+const filenameConverter = require("filename-converter");
 
 const lastfm = new LastFM("43cc7377dd1e2dc13bf74948df183dd7", {
   userAgent: "MyApp/1.0.0 (http://example.com)",
@@ -27,16 +26,37 @@ const lastfm = new LastFM("43cc7377dd1e2dc13bf74948df183dd7", {
 
 const args = [...process.argv];
 
-let log = (msg, colour) => {
-  if (!colour) colour = "white";
-  console.log(chalk[`${colour}`](msg));
-};
+// Add help command
+let helpCmd = args.indexOf("-h") !== -1 || args.indexOf("--help") !== -1;
+if (helpCmd) {
+  console.log(`
+musicdl-cli - Download music from Spotify
+
+Usage: musicdl-cli [options] <song name or spotify URL>
+
+Options:
+  -h, --help     Show this help message
+  -c             Show config file location
+  -d <number>    Set number of parallel downloads (default: 2)
+  -l             Download lyrics (if available)
+
+Examples:
+  musicdl-cli "never gonna give you up"
+  musicdl-cli -d 3 "https://open.spotify.com/playlist/..."
+  musicdl-cli -l "shape of you"
+
+Configuration:
+  Config file is stored at: ${configPath()}
+  Use this file to set your Spotify API credentials and download directory.
+`);
+  process.exit(0);
+}
 
 let configFile = configPath();
 
 let configCmd = args.indexOf("-c");
 if (configCmd != -1) {
-  log("Config file is located at: " + configFile, "blue");
+  console.log("Config file is located at: " + configFile); // Use console.log here
   return;
 }
 
@@ -66,9 +86,7 @@ function configPath() {
   process.env.NODE_CONFIG_DIR = configFolder;
 
   if (!fs.existsSync(configFolder) || !fs.existsSync(configFile)) {
-    let downloadDir = path
-      .join(os.homedir(), "Downloads")
-      .replaceAll("\\", "/");
+    let downloadDir = path.join(os.homedir(), "Downloads").replace(/\\/g, "/"); // replaceAll("\\", "/") replaced with regex for compatibility
     let configFileData = `{\n
 		"Warning":"Please use '/' while changing Download_Directory",\n
 	"Download_Directory": "${downloadDir}",\n
@@ -120,20 +138,48 @@ let downloadDir;
 if (config.has("Download_Directory")) {
   downloadDir = path.join(config.get("Download_Directory"));
   if (!fs.existsSync(downloadDir)) {
-    log("Download Directory doesn't exist: " + downloadDir, "red");
-    log("Please specify a working directory in " + configFile + "\n", "red");
+    console.log("Download Directory doesn't exist: " + downloadDir); // Use console.log here
+    console.log("Please specify a working directory in " + configFile + "\n"); // Use console.log here
     downloadDir = path.join(process.cwd(), "Music");
-    log("Downloading in Current Directory: " + downloadDir, "yellow");
+    console.log("Downloading in Current Directory: " + downloadDir); // Use console.log here
   } else {
-    log("Downloading in: " + downloadDir, "yellow");
+    console.log("Downloading in: " + downloadDir); // Use console.log here
   }
 } else {
-  log("Please specify your Download_Directory in " + configFile, "red");
+  console.log("Please specify your Download_Directory in " + configFile); // Use console.log here
   downloadDir = path.join(process.cwd(), "Music");
-  log("Downloading in Current Directory: " + downloadDir, "yellow");
+  console.log("Downloading in Current Directory: " + downloadDir); // Use console.log here
 }
 
-/////////////////////////////////////////////////////////////////////////
+// ---------- Define log file path and log functions in package config dir ----------
+let logDir;
+if (process.env.XDG_CONFIG_HOME) {
+  logDir = path.join(process.env.XDG_CONFIG_HOME, appPrefix);
+} else if (fs.existsSync(`${os.homedir()}/.config`)) {
+  logDir = path.join(`${os.homedir()}/.config/`, appPrefix);
+} else if (process.env.APPDATA) {
+  logDir = path.join(process.env.APPDATA, appPrefix);
+} else {
+  logDir = path.join(os.homedir(), "." + appPrefix);
+}
+if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+const logFilePath = path.join(logDir, "musicdl-cli.log");
+// Clear log file at start of each run
+fs.writeFileSync(logFilePath, "");
+function logToFile(msg) {
+  fs.appendFileSync(logFilePath, `[${new Date().toISOString()}] ${msg}\n`);
+}
+let log = (msg, colour) => {
+  if (!colour) colour = "white";
+  msg = String(msg); // Convert to string
+  // Only show non-debug logs in CLI
+  if (!msg.startsWith("[DEBUG]")) {
+    console.log(chalk[`${colour}`](msg));
+  }
+  // Always log everything to file
+  logToFile(msg);
+};
+// ---------------------------------------------------------------
 
 let imgDir;
 //let bar1;
@@ -181,9 +227,9 @@ function startDownload(link) {
     let playlistName = spotifyObj.type === "track" ? "tracks" : spotifyObj.name;
 
     ///fix///
-    playlistName = playlistName.replaceAll("/", "_").replaceAll("\\", "_");
+    playlistName = playlistName.replace(/\//g, "_").replace(/\\/g, "_"); // replaceAll replaced with regex
     /////////
-	  //
+    //
     let dir = path.join(downloadDir, playlistName);
 
     if (!fs.existsSync(dir)) {
@@ -268,17 +314,68 @@ async function downloadAndSave(spotifyObj, dir, currID) {
     currID
   ].options.format = `{bar} | Starting: ${song.id}. ${song.fullTitle}`;
 
+  // Debug: show the YouTube search query
+  log(
+    `[DEBUG] Searching YouTube for: "${song.artist[0]} - ${song.title} official audio"`,
+    "blue"
+  );
+
   song.link = await getYtLink(song);
+
+  // Debug: show the YouTube link found
+  log(
+    `[DEBUG] YouTube link found: ${song.link ? song.link : "None"}`,
+    song.link ? "green" : "red"
+  );
 
   fs.writeFileSync(path.join(dir, "process.json"), JSON.stringify(spotifyObj));
 
   try {
-    let info = await ytdl.getInfo(song.link);
+    const options = {
+      quality: "highestaudio",
+      requestOptions: {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        },
+      },
+    };
+
+    let info;
+    // Try up to 3 times
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        info = await ytdl.getInfo(song.link);
+        break;
+      } catch (e) {
+        log(`[DEBUG] Attempt ${attempt} failed: ${e.message}`, "yellow");
+        if (attempt === 3) throw e;
+        await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait 1s between attempts
+      }
+    }
+
+    // Debug: show available formats
+    log(
+      `[DEBUG] Available formats: ${info.formats ? info.formats.length : 0}`,
+      "blue"
+    );
+
     let highestFormat = ytdl.chooseFormat(info.formats, {
       quality: "highestaudio",
     });
 
-    let audioReadableStream = ytdl(song.link, { format: highestFormat });
+    // Debug: show chosen format details
+    log(
+      `[DEBUG] Chosen format: ${
+        highestFormat ? highestFormat.mimeType : "None"
+      }`,
+      highestFormat ? "green" : "red"
+    );
+
+    let audioReadableStream = ytdl(song.link, {
+      ...options,
+      format: highestFormat,
+    });
 
     let filepath;
     if (spotifyObj.type == "track") {
@@ -299,6 +396,11 @@ async function downloadAndSave(spotifyObj, dir, currID) {
       currID
     );
   } catch (err) {
+    log(`Download failed for "${song.fullTitle}": ${err.message}`, "red");
+    // Debug: show error stack if available
+    if (err.stack) log(`[DEBUG] Error stack:\n${err.stack}`, "red");
+    // Debug: show problematic YouTube link
+    log(`[DEBUG] Problematic YouTube link: ${song.link}`, "red");
     bars[currID].update(100);
     spotifyObj.failed.push(song.fullTitle);
     downloadAndSave(spotifyObj, dir, currID);
@@ -345,9 +447,17 @@ function DownloadAndEncode(
   enc.on("end", async function () {
     await addCoverAndMetadata(spotifyObj, song, filepath);
     if (lyricsCmd >= 0) {
-      getLyrics(song).then((data) => {
-        fs.writeFile(filepath.slice(0, -3).concat("lrc"), data, () => {});
-      });
+      const lyrics = await getLyrics(song);
+      if (lyrics) {
+        fs.writeFileSync(filepath.slice(0, -3).concat("lrc"), lyrics);
+        log(`Lyrics saved for: ${song.fullTitle}`, "green");
+      } else {
+        let message =
+          spotifyObj.type === "track"
+            ? "No lyrics available for this track"
+            : `Skipping lyrics for: ${song.fullTitle}`;
+        log(message, "yellow");
+      }
     }
     spotifyObj.completed += 1;
     bars[
@@ -401,7 +511,7 @@ async function addCoverAndMetadata(spotifyObj, song, filepath) {
     });
   writer.addTag();
 
-  const taggedSongBuffer = Buffer.from(writer.arrayBuffer);
+  const taggedSongBuffer = Buffer.from(writer.arrayBuffer); // Buffer() replaced with Buffer.from()
   fs.writeFileSync(filepath, taggedSongBuffer);
 }
 
@@ -449,6 +559,37 @@ async function spotifyToArray(link) {
     parNum: parNum || 2,
   };
 
+  if (spotifyInfosByURL.type === "track") {
+    log(`[DEBUG] -------- Spotify Track Details --------`, "blue");
+    log(`[DEBUG] Track ID: ${spotifyInfosByURL.id}`, "blue");
+    log(`[DEBUG] Title: ${spotifyInfosByURL.name}`, "blue");
+    log(
+      `[DEBUG] Artists: ${spotifyInfosByURL.artists
+        .map((a) => a.name)
+        .join(", ")}`,
+      "blue"
+    );
+    log(`[DEBUG] Album: ${spotifyInfosByURL.album.name}`, "blue");
+    log(
+      `[DEBUG] Release Date: ${spotifyInfosByURL.album.release_date}`,
+      "blue"
+    );
+    log(
+      `[DEBUG] Duration: ${Math.floor(spotifyInfosByURL.duration_ms / 1000)}s`,
+      "blue"
+    );
+    log(`[DEBUG] Popularity: ${spotifyInfosByURL.popularity}/100`, "blue");
+    log(
+      `[DEBUG] Preview URL: ${spotifyInfosByURL.preview_url || "None"}`,
+      "blue"
+    );
+    log(
+      `[DEBUG] External URL: ${spotifyInfosByURL.external_urls.spotify}`,
+      "blue"
+    );
+    log(`[DEBUG] -----------------------------------`, "blue");
+  }
+
   spotifyInfosByURL.tracks.items.forEach((item, index) => {
     let artists = [];
     (item.track?.artists || item.artists).forEach((art) => {
@@ -477,9 +618,9 @@ async function spotifyToArray(link) {
     ///FIX///
     songInfos.fullTitle = `${songInfos.artist[0]} - ${songInfos.title}`;
 
-    songInfos.fullTitle = filenameConverter.serialize(songInfos.fullTitle)
+    songInfos.fullTitle = filenameConverter.serialize(songInfos.fullTitle);
 
-    songInfos.albumFile = filenameConverter.serialize(songInfos.album)
+    songInfos.albumFile = filenameConverter.serialize(songInfos.album);
     ////////
 
     lastfm.trackTopTags(
@@ -501,6 +642,19 @@ async function spotifyToArray(link) {
       }
     );
 
+    // Add debug info for each track in playlist/album
+    log(
+      `[DEBUG] Processing Track ${index + 1}/${
+        spotifyInfosByURL.tracks.items.length
+      }`,
+      "blue"
+    );
+    log(`[DEBUG] Track ID: ${songInfos.spotifyId}`, "blue");
+    log(`[DEBUG] Title: ${songInfos.title}`, "blue");
+    log(`[DEBUG] Artists: ${songInfos.artist.join(", ")}`, "blue");
+    log(`[DEBUG] Album: ${songInfos.album}`, "blue");
+    log(`[DEBUG] Duration: ${Math.floor(songInfos.duration / 1000)}s`, "blue");
+
     spotifyObj.songsArray.push(songInfos);
   });
 
@@ -511,13 +665,37 @@ async function getYtLink(song) {
   const youtube = new Scraper();
   let link;
   try {
-    let videos = await youtube.search(
-      song.artist[0] + " - " + song.title + " official audio"
-    );
+    let query = song.artist[0] + " - " + song.title + " official audio";
+    log(`[DEBUG] -------- YouTube Search Details --------`, "blue");
+    log(`[DEBUG] Search Query: "${query}"`, "blue");
+
+    let videos = await youtube.search(query);
+
+    log(`[DEBUG] Total Results: ${videos?.videos?.length || 0}`, "blue");
+    if (videos?.videos?.length) {
+      videos.videos.slice(0, 3).forEach((vid, idx) => {
+        log(`[DEBUG] Result ${idx + 1}:`, "blue");
+        log(`[DEBUG] Title: ${vid.title}`, "blue");
+        log(`[DEBUG] Duration: ${vid.duration}`, "blue");
+        log(`[DEBUG] Channel: ${vid.channel?.name || "Unknown"}`, "blue");
+        log(`[DEBUG] URL: ${vid.link}`, "blue");
+      });
+    }
+    log(`[DEBUG] ------------------------------------`, "blue");
     link = videos?.videos[0]?.link;
     song.ytDuration = videos?.videos[0]?.duration;
+    if (!link) {
+      log(
+        `No YouTube link found for "${song.artist[0]} - ${song.title}"`,
+        "red"
+      );
+    }
   } catch (err) {
-    log(err, "red");
+    log(
+      `YouTube search error for "${song.artist[0]} - ${song.title}": ${err.message}`,
+      "red"
+    );
+    if (err.stack) log(`[DEBUG] Error stack:\n${err.stack}`, "red");
   }
 
   return link;
@@ -525,8 +703,12 @@ async function getYtLink(song) {
 
 async function downloadImg(uri, file) {
   return new Promise(async function (resolve) {
-    const res = await fetch(uri);
-    res.body.pipe(
+    const response = await axios({
+      method: "get",
+      url: uri,
+      responseType: "stream",
+    });
+    response.data.pipe(
       fs.createWriteStream(file).on("close", () => {
         resolve(file);
       })
@@ -535,26 +717,31 @@ async function downloadImg(uri, file) {
 }
 
 async function getLyrics(song) {
-  let lyrics = "";
-  let reqLink = `https://spotify-lyric-api-984e7b4face0.herokuapp.com/?trackid=${song.spotifyId}&format=lrc`;
+  let reqLink = `https://api.lyricstify.vercel.app/v1/lyrics/${song.spotifyId}`;
 
   try {
-    let res = await request(reqLink);
-    res = JSON.parse(res);
-    if (res.error) {
-      log("Error fetching lyrics!", "red");
-      lyrics = "Error!";
-    } else {
-      res.lines.forEach((line) => {
-        line = `[${line.timeTag}] ${line.words} \n`;
-        lyrics = lyrics + line;
-      });
+    const res = await axios.get(reqLink);
+    log(`[DEBUG] Lyrics API Response:`, "blue");
+    log(`[DEBUG] Status: ${res.status}`, "blue");
+    log(
+      `[DEBUG] Has Lyrics: ${!res.data.error && res.data.lines?.length > 0}`,
+      "blue"
+    );
+    log(`[DEBUG] Line Count: ${res.data.lines?.length || 0}`, "blue");
+    if (res.data.error || !res.data.lines || res.data.lines.length === 0) {
+      log(`Lyrics not found for: ${song.artist[0]} - ${song.title}`, "yellow");
+      return null;
     }
+
+    let lyrics = "";
+    res.data.lines.forEach((line) => {
+      lyrics += `[${line.timeTag}] ${line.words}\n`;
+    });
+    return lyrics;
   } catch (err) {
-    log(err, "red");
-    lyrics = "Error!";
+    log(`Failed to fetch lyrics for: ${song.artist[0]} - ${song.title}`, "red");
+    return null;
   }
-  return lyrics;
 }
 
 function resume(oldSpotifyObj, dir) {
@@ -575,3 +762,4 @@ function resume(oldSpotifyObj, dir) {
     downloadAndSave(oldSpotifyObj, dir, i);
   }
 }
+

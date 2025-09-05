@@ -50,6 +50,18 @@ You can also specify your download location in config file.
 
 ## Usage/Examples
 
+
+```bash
+musicdl-cli [options] <song name or spotify URL>
+
+Options:
+  -h, --help     Show this help message
+  -c             Show config file location
+  -d <number>    Set number of parallel downloads (default: 2)
+  -l             Download lyrics (if available)
+
+
+
 Search and download **song**: *(one at a time)*
 ```bash
 $ musicdl-cli "lost frank ocean"
