@@ -827,31 +827,87 @@ async function downloadImg(uri, file) {
 }
 
 async function getLyrics(song) {
-  let reqLink = `https://api.lyricstify.vercel.app/v1/lyrics/${song.spotifyId}`;
+  // List of lyrics API endpoints to try (in order of preference)
+  const lyricsApis = [
+    // spotify-lyrics-api (fetches from Spotify/Musixmatch - time synced)
+    {
+      name: "spotify-lyrics-api",
+      url: `https://spotify-lyric-api.herokuapp.com/?trackid=${song.spotifyId}&format=lrc`,
+      parse: (data) => {
+        if (data.error || !data.lines || data.lines.length === 0) return null;
+        return data.lines
+          .map((line) => `[${line.timeTag}] ${line.words}`)
+          .join("\n");
+      },
+    },
+    // lrclib.net - free open source lyrics database
+    {
+      name: "lrclib",
+      url: `https://lrclib.net/api/get?artist_name=${encodeURIComponent(
+        song.artist[0]
+      )}&track_name=${encodeURIComponent(
+        song.title
+      )}&album_name=${encodeURIComponent(song.album)}`,
+      parse: (data) => {
+        if (data.syncedLyrics) return data.syncedLyrics;
+        if (data.plainLyrics) {
+          // Convert plain lyrics to LRC format (unsynced)
+          return data.plainLyrics
+            .split("\n")
+            .map((line) => `[00:00.00] ${line}`)
+            .join("\n");
+        }
+        return null;
+      },
+    },
+    // Alternative spotify-lyrics-api instance
+    {
+      name: "spotify-lyrics-api-alt",
+      url: `https://spotify-lyrics-api-kappa.vercel.app/?trackid=${song.spotifyId}&format=lrc`,
+      parse: (data) => {
+        if (data.error || !data.lines || data.lines.length === 0) return null;
+        return data.lines
+          .map((line) => `[${line.timeTag}] ${line.words}`)
+          .join("\n");
+      },
+    },
+    // lyricstify API
+    {
+      name: "lyricstify",
+      url: `https://api.lyricstify.vercel.app/v1/lyrics/${song.spotifyId}`,
+      parse: (data) => {
+        if (data.error || !data.lines || data.lines.length === 0) return null;
+        return data.lines
+          .map((line) => `[${line.timeTag}] ${line.words}`)
+          .join("\n");
+      },
+    },
+  ];
 
-  try {
-    const res = await axios.get(reqLink);
-    log(`[DEBUG] Lyrics API Response:`, "blue");
-    log(`[DEBUG] Status: ${res.status}`, "blue");
-    log(
-      `[DEBUG] Has Lyrics: ${!res.data.error && res.data.lines?.length > 0}`,
-      "blue"
-    );
-    log(`[DEBUG] Line Count: ${res.data.lines?.length || 0}`, "blue");
-    if (res.data.error || !res.data.lines || res.data.lines.length === 0) {
-      log(`Lyrics not found for: ${song.artist[0]} - ${song.title}`, "yellow");
-      return null;
+  log(`[DEBUG] Fetching lyrics for: ${song.artist[0]} - ${song.title}`, "blue");
+  log(`[DEBUG] Spotify Track ID: ${song.spotifyId}`, "blue");
+
+  for (const api of lyricsApis) {
+    try {
+      log(`[DEBUG] Trying ${api.name}...`, "blue");
+      const res = await axios.get(api.url, { timeout: 10000 });
+
+      log(`[DEBUG] ${api.name} response status: ${res.status}`, "blue");
+
+      const lyrics = api.parse(res.data);
+      if (lyrics) {
+        log(`[DEBUG] Lyrics found via ${api.name}!`, "green");
+        log(`[DEBUG] Lyrics length: ${lyrics.length} characters`, "blue");
+        return lyrics;
+      }
+      log(`[DEBUG] ${api.name} returned no lyrics`, "yellow");
+    } catch (err) {
+      log(`[DEBUG] ${api.name} failed: ${err.message}`, "yellow");
     }
-
-    let lyrics = "";
-    res.data.lines.forEach((line) => {
-      lyrics += `[${line.timeTag}] ${line.words}\n`;
-    });
-    return lyrics;
-  } catch (err) {
-    log(`Failed to fetch lyrics for: ${song.artist[0]} - ${song.title}`, "red");
-    return null;
   }
+
+  log(`Lyrics not found for: ${song.artist[0]} - ${song.title}`, "yellow");
+  return null;
 }
 
 function resume(oldSpotifyObj, dir) {

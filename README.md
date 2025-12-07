@@ -7,6 +7,17 @@ It uses freely available music videos as the audio source and Spotify API for pl
 
 *As there are plenty of reverbs and remix and lofi edits in youtube, the tool may not get the correct audio sometimes*
 
+## Requirements
+
+- **Node.js** v18+ (uses native fetch internally)
+- **yt-dlp** - Required for reliable YouTube downloads
+  ```bash
+  # macOS (Homebrew)
+  brew install yt-dlp
+
+  # Windows/Linux (pip)
+  pip install yt-dlp
+  ```
 
 ## Installation
 
@@ -99,6 +110,24 @@ For eg.
 musicdl-cli -l "https://open.spotify.com/album/34GQP3dILpyCN018y2k61L" -d 3
 ```
 The above command will download 3 tracks at a time.
+
+## Debugging
+
+Debug logs are automatically saved to:
+- **macOS/Linux**: `~/.config/musicdl-cli/musicdl-cli.log`
+- **Windows**: `%APPDATA%/musicdl-cli/musicdl-cli.log`
+
+Check the log file if you encounter any issues with downloads or lyrics.
+
+## Changelog
+
+### v3.3.0
+- **Fixed**: YouTube download reliability - now uses `yt-dlp` as primary download method with multiple fallbacks
+- **New**: Time-synced lyrics support via multiple APIs (lrclib.net, spotify-lyrics-api)
+- **New**: Help command (`-h` or `--help`)
+- **Improved**: Better error handling and logging
+- **Fixed**: Removed deprecated `request-promise` and `node-fetch` packages
+- **Fixed**: Temp file cleanup after encoding
 
 ## I don't have spotify client and secret
 
