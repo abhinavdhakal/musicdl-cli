@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 "use strict";
 
-
+const { Readable } = require("stream");
+const { execSync, spawn } = require("child_process");
 const Scraper = require("@yimura/scraper").default;
 const ID3Writer = require("browser-id3-writer");
 const cliProgress = require("cli-progress");
@@ -9,6 +10,8 @@ const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
 const ffmpeg = require("fluent-ffmpeg");
 ffmpeg.setFfmpegPath(ffmpegPath);
 const ytdl = require("@distube/ytdl-core");
+const { Innertube } = require("youtubei.js");
+const play = require("play-dl");
 const LastFM = require("last-fm");
 const appPrefix = "musicdl-cli";
 const chalk = require("chalk");
@@ -45,9 +48,15 @@ Examples:
   musicdl-cli -d 3 "https://open.spotify.com/playlist/..."
   musicdl-cli -l "shape of you"
 
+Requirements:
+  - yt-dlp: Install with 'brew install yt-dlp' (macOS) or 'pip install yt-dlp'
+  - ffmpeg: Bundled with the package
+
 Configuration:
   Config file is stored at: ${configPath()}
   Use this file to set your Spotify API credentials and download directory.
+
+Debug logs are stored at: ~/.config/musicdl-cli/musicdl-cli.log
 `);
   process.exit(0);
 }
@@ -331,51 +340,136 @@ async function downloadAndSave(spotifyObj, dir, currID) {
   fs.writeFileSync(path.join(dir, "process.json"), JSON.stringify(spotifyObj));
 
   try {
-    const options = {
-      quality: "highestaudio",
-      requestOptions: {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        },
-      },
-    };
+    let audioStream;
+    let audioBitrate = 128;
+    let useYtDlp = false;
+    let tempFile = path.join(dir, `temp_${Date.now()}.webm`);
 
-    let info;
-    // Try up to 3 times
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    // Check if yt-dlp is available and try it first (most reliable)
+    try {
+      execSync("which yt-dlp || where yt-dlp", { stdio: "ignore" });
+      log(`[DEBUG] Trying yt-dlp for download...`, "blue");
+
+      // Use yt-dlp to download audio
+      const ytDlpCmd = `yt-dlp -f "bestaudio" -o "${tempFile}" --no-playlist "${song.link}"`;
+      log(`[DEBUG] Running: ${ytDlpCmd}`, "blue");
+
+      execSync(ytDlpCmd, { stdio: "pipe" });
+
+      if (fs.existsSync(tempFile)) {
+        log(`[DEBUG] yt-dlp download successful`, "green");
+        audioStream = fs.createReadStream(tempFile);
+        useYtDlp = true;
+        audioBitrate = 192;
+      } else {
+        throw new Error("yt-dlp failed to create output file");
+      }
+    } catch (ytDlpErr) {
+      log(
+        `[DEBUG] yt-dlp failed or not available: ${ytDlpErr.message}`,
+        "yellow"
+      );
+
+      // Try play-dl first (most reliable currently)
       try {
-        info = await ytdl.getInfo(song.link);
-        break;
-      } catch (e) {
-        log(`[DEBUG] Attempt ${attempt} failed: ${e.message}`, "yellow");
-        if (attempt === 3) throw e;
-        await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait 1s between attempts
+        log(`[DEBUG] Trying play-dl for download...`, "blue");
+
+        const streamInfo = await play.stream(song.link);
+        audioStream = streamInfo.stream;
+        audioBitrate = streamInfo.type === "opus" ? 128 : 192;
+
+        log(`[DEBUG] play-dl stream type: ${streamInfo.type}`, "blue");
+        log(`[DEBUG] play-dl download stream created successfully`, "green");
+      } catch (playErr) {
+        log(
+          `[DEBUG] play-dl failed: ${playErr.message}, trying youtubei.js...`,
+          "yellow"
+        );
+
+        // Try youtubei.js second
+        try {
+          log(`[DEBUG] Trying youtubei.js for download...`, "blue");
+          const yt = await Innertube.create();
+          const videoId = song.link.match(/(?:v=|\/)([a-zA-Z0-9_-]{11})/)?.[1];
+
+          if (!videoId) throw new Error("Could not extract video ID");
+
+          const info = await yt.getBasicInfo(videoId);
+          log(`[DEBUG] Video Title: ${info.basic_info.title}`, "blue");
+          log(`[DEBUG] Duration: ${info.basic_info.duration}s`, "blue");
+
+          const format = info.streaming_data?.adaptive_formats
+            ?.filter((f) => f.mime_type?.includes("audio"))
+            ?.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))?.[0];
+
+          if (format) {
+            audioBitrate = Math.floor((format.bitrate || 128000) / 1000);
+            log(`[DEBUG] Audio Bitrate: ${audioBitrate}kbps`, "blue");
+            log(`[DEBUG] Audio Format: ${format.mime_type}`, "blue");
+          }
+
+          const stream = await yt.download(videoId, {
+            type: "audio",
+            quality: "best",
+          });
+
+          audioStream = Readable.fromWeb(stream);
+          log(
+            `[DEBUG] youtubei.js download stream created successfully`,
+            "green"
+          );
+        } catch (ytErr) {
+          log(
+            `[DEBUG] youtubei.js failed: ${ytErr.message}, trying ytdl-core...`,
+            "yellow"
+          );
+
+          // Fallback to ytdl-core
+          const options = {
+            quality: "highestaudio",
+            requestOptions: {
+              headers: {
+                "User-Agent":
+                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+              },
+            },
+          };
+
+          let info;
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+              info = await ytdl.getInfo(song.link);
+              break;
+            } catch (e) {
+              log(`[DEBUG] Attempt ${attempt} failed: ${e.message}`, "yellow");
+              if (attempt === 3) throw e;
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+            }
+          }
+
+          log(
+            `[DEBUG] Available formats: ${
+              info.formats ? info.formats.length : 0
+            }`,
+            "blue"
+          );
+
+          let highestFormat = ytdl.chooseFormat(info.formats, {
+            quality: "highestaudio",
+          });
+
+          log(
+            `[DEBUG] Chosen format: ${
+              highestFormat ? highestFormat.mimeType : "None"
+            }`,
+            highestFormat ? "green" : "red"
+          );
+
+          audioStream = ytdl(song.link, { ...options, format: highestFormat });
+          audioBitrate = highestFormat.audioBitrate || 128;
+        }
       }
     }
-
-    // Debug: show available formats
-    log(
-      `[DEBUG] Available formats: ${info.formats ? info.formats.length : 0}`,
-      "blue"
-    );
-
-    let highestFormat = ytdl.chooseFormat(info.formats, {
-      quality: "highestaudio",
-    });
-
-    // Debug: show chosen format details
-    log(
-      `[DEBUG] Chosen format: ${
-        highestFormat ? highestFormat.mimeType : "None"
-      }`,
-      highestFormat ? "green" : "red"
-    );
-
-    let audioReadableStream = ytdl(song.link, {
-      ...options,
-      format: highestFormat,
-    });
 
     let filepath;
     if (spotifyObj.type == "track") {
@@ -384,16 +478,15 @@ async function downloadAndSave(spotifyObj, dir, currID) {
       filepath = path.join(dir, `${song.id}. ${song.fullTitle}.mp3`);
     }
 
-    const audioBitrate = highestFormat.audioBitrate;
-
     DownloadAndEncode(
-      audioReadableStream,
+      audioStream,
       spotifyObj,
       song,
       filepath,
       audioBitrate,
       dir,
-      currID
+      currID,
+      useYtDlp ? tempFile : null
     );
   } catch (err) {
     log(`Download failed for "${song.fullTitle}": ${err.message}`, "red");
@@ -415,7 +508,8 @@ function DownloadAndEncode(
   filepath,
   audioBitrate,
   dir,
-  currID
+  currID,
+  tempFile = null
 ) {
   let outputOptions = ["-id3v2_version", "4"];
 
@@ -445,6 +539,16 @@ function DownloadAndEncode(
   enc.saveToFile(filepath);
 
   enc.on("end", async function () {
+    // Clean up temp file if it exists
+    if (tempFile && fs.existsSync(tempFile)) {
+      try {
+        fs.unlinkSync(tempFile);
+        log(`[DEBUG] Cleaned up temp file: ${tempFile}`, "blue");
+      } catch (e) {
+        log(`[DEBUG] Failed to clean up temp file: ${e.message}`, "yellow");
+      }
+    }
+
     await addCoverAndMetadata(spotifyObj, song, filepath);
     if (lyricsCmd >= 0) {
       const lyrics = await getLyrics(song);
@@ -469,6 +573,12 @@ function DownloadAndEncode(
   });
 
   enc.on("error", function (err) {
+    // Clean up temp file if it exists
+    if (tempFile && fs.existsSync(tempFile)) {
+      try {
+        fs.unlinkSync(tempFile);
+      } catch (e) {}
+    }
     bars[currID].update(100);
     spotifyObj.failed.push(song.fullTitle);
     downloadAndSave(spotifyObj, dir, currID);
